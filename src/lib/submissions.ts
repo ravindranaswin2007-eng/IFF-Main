@@ -69,5 +69,3 @@ export type InboxEntry = InboxUpdate & {
 };
 
 export type InboxPage = { entries: InboxEntry[]; hasNext: boolean };
-
-export const maxResumeBytes = 5 * 1024 * 1024;

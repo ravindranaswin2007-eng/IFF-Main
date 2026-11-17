@@ -33,13 +33,19 @@ const schema = `
     role TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE
   );
   ALTER TABLE iff_editor_users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE iff_submissions ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE iff_publications ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE iff_cms_records ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE iff_media ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE iff_editor_users ENABLE ROW LEVEL SECURITY;
 `;
 
 type Query = <Row extends object>(sql: string, values?: unknown[]) => Promise<{ rows: Row[]; affected: number }>;
 let database: Promise<Query> | undefined;
 
 async function connect(): Promise<Query> {
-  const url = process.env['IFF_DATABASE_URL'];
+  const vercel = process.env['VERCEL'] === '1';
+  const url = process.env['IFF_DATABASE_URL'] || (vercel ? process.env['POSTGRES_URL'] || process.env['DATABASE_URL'] : undefined);
   if (!url) {
     const localPath = process.env['IFF_LOCAL_DB'];
     if (!localPath && process.env['NODE_ENV'] === 'production') throw new Error('IFF_DATABASE_URL is required.');
@@ -53,13 +59,18 @@ async function connect(): Promise<Query> {
   }
 
   const caFile = process.env['IFF_DATABASE_CA_FILE'];
-  if (process.env['NODE_ENV'] === 'production' && !caFile) throw new Error('IFF_DATABASE_CA_FILE is required.');
+  if (process.env['NODE_ENV'] === 'production' && !caFile && !vercel) throw new Error('IFF_DATABASE_CA_FILE is required.');
   const parsed = new URL(url);
-  if (caFile && ['sslmode', 'sslcert', 'sslkey', 'sslrootcert', 'ssl'].some(name => parsed.searchParams.has(name))) {
+  const sslParameters = ['sslmode', 'sslcert', 'sslkey', 'sslrootcert', 'ssl'];
+  if (caFile && sslParameters.some(name => parsed.searchParams.has(name))) {
     throw new Error('Configure PostgreSQL TLS with IFF_DATABASE_CA_FILE only.');
   }
-  const pool = new pg.Pool({ connectionString: url, max: 5, connectionTimeoutMillis: 5000,
-    ssl: caFile ? { ca: readFileSync(caFile, 'utf8'), rejectUnauthorized: true } : undefined });
+  const enableChannelBinding = parsed.searchParams.get('channel_binding') === 'require';
+  if (vercel && !caFile) for (const name of sslParameters) parsed.searchParams.delete(name);
+  const ssl = caFile ? { ca: readFileSync(caFile, 'utf8'), rejectUnauthorized: true }
+    : vercel ? { rejectUnauthorized: true } : undefined;
+  const pool = new pg.Pool({ connectionString: parsed.toString(), max: vercel ? 2 : 5, connectionTimeoutMillis: 8000,
+    ssl, enableChannelBinding });
   pool.on('error', error => console.error('IFF database connection closed', error.message));
   try {
     const client = await pool.connect();

@@ -3,7 +3,8 @@ import { useEffect, useRef, useState, type ReactNode, type FormEvent, type Compo
 import { ArrowRight, ShieldCheck, Upload, CheckCircle2, Users, Landmark, Network, BookOpen, Sparkles, Globe, Briefcase, MessageSquare, Mic, CalendarDays, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { photos } from '@/lib/photos';
-import { maxResumeBytes, topics } from '@/lib/submissions';
+import { topics } from '@/lib/submissions';
+import { maxResumeBytes, maxResumeMb } from '@/lib/upload-limits';
 import { eventCategories, type SiteEvent, type SitePerson } from '@/lib/cms';
 import { useCms, usePagePhoto } from '@/lib/cms-context';
 
@@ -162,7 +163,7 @@ export function ApplicationForm({ kind = 'contact', topic }: {
     try {
       const resume = data.get('resume');
       if (resume instanceof File && resume.size > maxResumeBytes) {
-        throw new Error('Your résumé must be 5 MB or smaller.');
+        throw new Error(`Your résumé must be ${maxResumeMb} MB or smaller.`);
       }
       const response = await fetch('/api/iff/submissions', { method: 'POST', body: data });
       const payload = await response.json();
@@ -200,7 +201,7 @@ export function ApplicationForm({ kind = 'contact', topic }: {
           <textarea name="message" required={speaker} maxLength={4000} rows={4} />
         </label>
         {career && <label className="full-field">Upload Résumé <span className="required">*</span>
-          <span className="upload-field"><Upload size={25} /><span>{file || 'Choose a résumé'}<small>PDF, DOC or DOCX, up to 5 MB</small></span>
+          <span className="upload-field"><Upload size={25} /><span>{file || 'Choose a résumé'}<small>PDF, DOC or DOCX, up to {maxResumeMb} MB</small></span>
             <input aria-label="Upload résumé" name="resume" type="file" required accept=".pdf,.doc,.docx"
               onChange={event => setFile(event.target.files?.[0]?.name || '')} />
           </span>

@@ -1,13 +1,14 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { query } from './iff-store.server';
 import {
-  authenticateStaff, cmsCollection, cmsSettings, CmsError, findStaffSession, library, mediaLimit,
+  authenticateStaff, cmsCollection, cmsSettings, CmsError, findStaffSession, library,
   mediaResponse, saveBranding, saveCmsRecord, saveMedia, savePagePhotos, saveStaffAccount, staffAccounts,
 } from './iff-cms.server';
 import {
-  inboxKinds, inboxStatuses, inboxUpdateSchema, maxResumeBytes, publicationSchema, submissionSchema,
+  inboxKinds, inboxStatuses, inboxUpdateSchema, publicationSchema, submissionSchema,
   type InboxEntry, type InboxUpdate, type Publication,
 } from './submissions';
+import { maxMediaBytes, maxResumeBytes, maxResumeMb } from './upload-limits';
 
 const sessionCookie = 'iff_editor_session';
 const sessionSeconds = 8 * 60 * 60;
@@ -114,7 +115,7 @@ async function saveSubmission(request: Request) {
   const resume = data.get('resume');
   if (kind === 'career' && (!(resume instanceof File) || !resume.size || resume.size > maxResumeBytes ||
     !/\.(pdf|docx?)$/i.test(resume.name) || resume.name.length > 200)) {
-    throw new InvalidRequest('Upload a PDF, DOC or DOCX résumé up to 5 MB.');
+    throw new InvalidRequest(`Upload a PDF, DOC or DOCX résumé up to ${maxResumeMb} MB.`);
   }
   const attachment = kind === 'career' && resume instanceof File ? resume : null;
   const savedFields = result.data.kind === 'newsletter' ? { email: result.data.email.toLowerCase() } : fields;
@@ -227,7 +228,7 @@ async function editorApi(request: Request, url: URL, action: string) {
   }
   if (request.method === 'GET' && action === 'site/library') return json(await library());
   if (request.method === 'POST' && action === 'site/library') {
-    const body = await boundedBody(request, mediaLimit + 32_768);
+    const body = await boundedBody(request, maxMediaBytes + 32_768);
     const data = await body.formData().catch(() => { throw new InvalidRequest('Choose a file to upload.'); });
     return json(await saveMedia(data), 201);
   }

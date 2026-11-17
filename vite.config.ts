@@ -9,9 +9,12 @@
 // You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
+const vercel = process.env['VERCEL'] === '1' || process.env['NITRO_PRESET'] === 'vercel';
+
 export default defineConfig({
-  nitro: { preset: 'node-server' },
+  nitro: { preset: vercel ? 'vercel' : 'node-server' },
   vite: {
+    define: { 'import.meta.env.VITE_IFF_VERCEL': JSON.stringify(vercel ? '1' : '0') },
     optimizeDeps: {
       // Discover shared UI dependencies before serving the first page. Late discovery
       // can leave an open preview mixing old React DOM and new React module URLs.

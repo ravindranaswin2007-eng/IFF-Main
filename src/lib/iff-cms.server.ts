@@ -7,8 +7,8 @@ import {
 } from './cms';
 import { photos } from './photos';
 import { query } from './iff-store.server';
+import { maxMediaBytes, maxMediaMb } from './upload-limits';
 
-export const mediaLimit = 20 * 1024 * 1024;
 const uuidPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const mediaPath = /^\/api\/iff\/media\/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const approvedPhotos = [...new Set(Object.values(photos))];
@@ -115,7 +115,7 @@ export async function saveMedia(data: FormData) {
   const kind = data.get('kind');
   const file = data.get('file');
   if (!label.success || (kind !== 'photo' && kind !== 'file') || !(file instanceof File) ||
-      !file.size || file.size > mediaLimit || file.name.length > 200) throw new CmsError('Choose a file up to 20 MB and enter a title.');
+      !file.size || file.size > maxMediaBytes || file.name.length > 200) throw new CmsError(`Choose a file up to ${maxMediaMb} MB and enter a title.`);
   const extension = file.name.split('.').at(-1)?.toLowerCase() ?? '';
   const mime = mimeTypes[extension];
   if (!mime || (kind === 'photo') !== mime.startsWith('image/')) throw new CmsError('Upload a JPG, PNG or WebP photo, or a PDF or audio file.');

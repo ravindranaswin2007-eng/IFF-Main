@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { editorApi } from '@/lib/editor-api';
 import { defaultBranding, eventCategories, pagePhotoSlots, type Branding, type LibraryAsset, type PagePhotographs } from '@/lib/cms';
+import { maxMediaBytes, maxMediaMb } from '@/lib/upload-limits';
 
 type OnError = (error: unknown) => void;
 type EditableRecord = Record<string, string | boolean> & { id: string };
@@ -128,6 +129,11 @@ export function AdminLibrary({ kind, create, onError }: { kind: 'photo' | 'file'
     const form = event.currentTarget;
     const payload = new FormData(form);
     payload.set('kind', kind);
+    const file = payload.get('file');
+    if (file instanceof File && file.size > maxMediaBytes) {
+      onError(new Error(`Choose a file up to ${maxMediaMb} MB.`));
+      return;
+    }
     setPending(true);
     onError(undefined);
     try {
@@ -143,7 +149,7 @@ export function AdminLibrary({ kind, create, onError }: { kind: 'photo' | 'file'
   return <>
     <div className="editor-actions"><Button onClick={() => setShowUpload(value => !value)}>{showUpload ? 'Close upload' : `Upload ${kind}`}</Button></div>
     {showUpload && <form className="application-form editor-form admin-upload" onSubmit={upload}>
-      <p>{kind === 'photo' ? 'Upload approved IFF photography only.' : 'Upload PDFs or audio files intended for the public website.'} Files up to 20 MB.</p>
+      <p>{kind === 'photo' ? 'Upload approved IFF photography only.' : 'Upload PDFs or audio files intended for the public website.'} Files up to {maxMediaMb} MB.</p>
       <label>Title<input name="label" maxLength={180} required /></label>
       <label>File<input name="file" type="file" accept={kind === 'photo' ? '.jpg,.jpeg,.png,.webp' : '.pdf,.mp3,.m4a,.wav'} required /></label>
       <div className="editor-actions"><Button type="submit" disabled={pending}>{pending ? 'Uploading…' : 'Upload'}</Button></div>

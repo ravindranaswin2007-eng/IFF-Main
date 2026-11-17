@@ -49,3 +49,9 @@ Create a private RDS PostgreSQL database with encryption and automated backups. 
 If using CloudFront, disable caching for `/admin`, `/api/iff/admin/*`, `/api/iff/submissions`, TanStack server-function requests and public HTML that shows managed content. `/api/iff/media/*` serves public library files at immutable URLs. RDS stores both the media library and submissions. Connecting a newsletter sender is a separate integration.
 
 After deploying, verify `/api/iff/health` and the homepage return HTTP 200. Submit a test membership enquiry and verify it appears in `/admin`, then publish a draft and open it in the Knowledge Hub.
+
+## Vercel deployment
+
+Import the GitHub repository from its root. `vercel.json` selects the npm build, and Nitro emits the Vercel Node function and static assets during that build. Connect a PostgreSQL database with a TLS certificate trusted by Node.js, and set `IFF_ADMIN_PASSWORD` in the Production environment. The database connection uses `IFF_DATABASE_URL`, `POSTGRES_URL`, or `DATABASE_URL`, in that order. Leave `IFF_DATABASE_CA_FILE` unset for a provider with a publicly trusted certificate. If you use an explicit `IFF_PUBLIC_ORIGIN`, set it to the full HTTPS URL you want people to use for submitting forms.
+
+Vercel uploads are limited to 4 MB per résumé or library file to fit the Function payload limit. Publications can link to externally hosted reports and recordings. After deploying, check `/api/iff/health` and verify `/admin` with the production administrator password.
