@@ -1,5 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
-import { query } from './iff-store.server';
+import { query, tables } from './iff-store.server';
 import {
   authenticateStaff, cmsCollection, cmsSettings, CmsError, findStaffSession, library,
   mediaResponse, saveBranding, saveCmsRecord, saveMedia, savePagePhotos, saveStaffAccount, staffAccounts,
@@ -21,20 +21,20 @@ let failedLogins = 0;
 const publicationColumns = 'id, type, title, summary, body, url, status, published_at AS "publishedAt"';
 
 export async function publishedPublications() {
-  const { rows } = await query<Publication>(`SELECT ${publicationColumns} FROM iff_publications
+  const { rows } = await query<Publication>(`SELECT ${publicationColumns} FROM ${tables.publications}
     WHERE status = 'published' ORDER BY published_at DESC, id DESC`);
   return rows;
 }
 
 export async function publishedPublication(id: string) {
   if (!uuid.test(id)) return undefined;
-  const { rows } = await query<Publication>(`SELECT ${publicationColumns} FROM iff_publications
+  const { rows } = await query<Publication>(`SELECT ${publicationColumns} FROM ${tables.publications}
     WHERE id = $1 AND status = 'published'`, [id]);
   return rows[0];
 }
 
 async function adminPublications() {
-  const { rows } = await query<Publication>(`SELECT ${publicationColumns} FROM iff_publications
+  const { rows } = await query<Publication>(`SELECT ${publicationColumns} FROM ${tables.publications}
     ORDER BY updated_at DESC, id DESC`);
   return rows;
 }
@@ -120,7 +120,7 @@ async function saveSubmission(request: Request) {
   const attachment = kind === 'career' && resume instanceof File ? resume : null;
   const savedFields = result.data.kind === 'newsletter' ? { email: result.data.email.toLowerCase() } : fields;
   const inboxKind = result.data.kind === 'contact' && result.data.topic === 'Membership' ? 'membership' : kind;
-  await query(`INSERT INTO iff_submissions (id, kind, received_at, fields, attachment_name, attachment)
+  await query(`INSERT INTO ${tables.submissions} (id, kind, received_at, fields, attachment_name, attachment)
     VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING`, [
     randomUUID(), inboxKind, new Date().toISOString(), JSON.stringify(savedFields),
     attachment?.name ?? null, attachment ? Buffer.from(await attachment.arrayBuffer()) : null,
@@ -161,7 +161,7 @@ async function listInbox(url: URL, exporting: boolean) {
   const limit = exporting ? exportLimit : pageSize;
   const { rows } = await query<InboxEntry>(`SELECT id, kind, received_at AS "receivedAt", fields,
     attachment_name AS "attachmentName", status, owner, notes, revision
-    FROM iff_submissions
+    FROM ${tables.submissions}
     WHERE ($1 = '' OR kind = $1) AND ($2 = '' OR status = $2)
       AND ($3 = '' OR strpos(lower(concat_ws(' ', fields->>'name', fields->>'email',
         fields->>'organisation', owner, notes)), lower($3)) > 0)
@@ -192,7 +192,7 @@ async function updateInboxEntry(request: Request, id: string) {
   const parsed = inboxUpdateSchema.safeParse(await readJson(request, 32_768));
   if (!parsed.success) throw new InvalidRequest('Check the status, owner and notes.');
   const { status, owner, notes, revision } = parsed.data;
-  const { rows } = await query<InboxUpdate>(`UPDATE iff_submissions SET status = $1, owner = $2, notes = $3,
+  const { rows } = await query<InboxUpdate>(`UPDATE ${tables.submissions} SET status = $1, owner = $2, notes = $3,
     revision = revision + 1 WHERE id = $4 AND revision = $5 RETURNING status, owner, notes, revision`,
     [status, owner, notes, id, revision]);
   if (!rows[0]) throw new InvalidRequest('This submission changed. Refresh the inbox before saving again.', 409);
@@ -250,7 +250,7 @@ async function editorApi(request: Request, url: URL, action: string) {
     const id = action.slice('resume/'.length);
     if (!uuid.test(id)) throw new InvalidRequest('Résumé unavailable.', 404);
     const { rows: [item] } = await query<{ attachment: Uint8Array; attachment_name: string }>(
-      'SELECT attachment, attachment_name FROM iff_submissions WHERE id = $1', [id]);
+      `SELECT attachment, attachment_name FROM ${tables.submissions} WHERE id = $1`, [id]);
     if (!(item?.attachment instanceof Uint8Array) || typeof item.attachment_name !== 'string') {
       throw new InvalidRequest('Résumé unavailable.', 404);
     }
@@ -269,12 +269,12 @@ async function editorApi(request: Request, url: URL, action: string) {
     const id = action === 'publications' ? randomUUID() : action.slice('publications/'.length);
     const publishedAt = post.status === 'published' ? now : null;
     if (action === 'publications') {
-      await query(`INSERT INTO iff_publications (id, type, title, summary, body, url, status, updated_at, published_at)
+      await query(`INSERT INTO ${tables.publications} (id, type, title, summary, body, url, status, updated_at, published_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [id, post.type, post.title, post.summary, post.body, post.url, post.status, now, publishedAt]);
     } else {
       if (!uuid.test(id)) throw new InvalidRequest('Publication no longer exists.', 404);
-      const { affected } = await query(`UPDATE iff_publications SET type = $1, title = $2, summary = $3, body = $4, url = $5,
+      const { affected } = await query(`UPDATE ${tables.publications} SET type = $1, title = $2, summary = $3, body = $4, url = $5,
         status = $6, updated_at = $7, published_at = CASE WHEN $8::text IS NULL THEN NULL ELSE COALESCE(published_at, $8) END
         WHERE id = $9`, [post.type, post.title, post.summary, post.body, post.url, post.status, now, publishedAt, id]);
       if (!affected) throw new InvalidRequest('Publication no longer exists.', 404);

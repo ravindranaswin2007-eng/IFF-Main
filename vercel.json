@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
+  "regions": ["icn1"],
   "buildCommand": "npm run build",
-  "installCommand": "npm ci --no-audit --no-fund"
+  "installCommand": "npx --yes npm@11.6.1 ci --no-audit --no-fund"
 }

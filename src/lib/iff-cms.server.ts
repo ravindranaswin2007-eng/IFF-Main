@@ -6,7 +6,7 @@ import {
   type SitePerson, type StaffAccount,
 } from './cms';
 import { photos } from './photos';
-import { query } from './iff-store.server';
+import { query, tables } from './iff-store.server';
 import { maxMediaBytes, maxMediaMb } from './upload-limits';
 
 const uuidPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
@@ -38,13 +38,13 @@ export class CmsError extends Error {
 
 async function collectionRows<T extends { id: string }>(collection: Collection, defaults: T[] = []) {
   const { rows } = await query<{ id: string; data: Omit<T, 'id'> }>(
-    'SELECT id, data FROM iff_cms_records WHERE collection = $1 ORDER BY updated_at DESC, id', [collection]);
+    `SELECT id, data FROM ${tables.records} WHERE collection = $1 ORDER BY updated_at DESC, id`, [collection]);
   const managed = new Set(rows.map(row => row.id));
   return [...rows.map(({ id, data }) => ({ ...data, id } as T)), ...defaults.filter(record => !managed.has(record.id))];
 }
 
 async function setting<T extends object>(collection: string, id: string, fallback: T) {
-  const { rows } = await query<{ data: T }>('SELECT data FROM iff_cms_records WHERE collection = $1 AND id = $2', [collection, id]);
+  const { rows } = await query<{ data: T }>(`SELECT data FROM ${tables.records} WHERE collection = $1 AND id = $2`, [collection, id]);
   return rows[0]?.data ?? fallback;
 }
 
@@ -52,7 +52,7 @@ export async function publicCms(): Promise<PublicCms> {
   const [events, leadership, volunteers, branding, pages] = await Promise.all([
     collectionRows('events', baselineEvents), collectionRows('leadership', baselineLeadership),
     collectionRows<SitePerson>('volunteers'), setting<Branding>('branding', 'site', defaultBranding),
-    query<{ id: string; data: PagePhotographs[string] }>('SELECT id, data FROM iff_cms_records WHERE collection = $1', ['pages']),
+    query<{ id: string; data: PagePhotographs[string] }>(`SELECT id, data FROM ${tables.records} WHERE collection = $1`, ['pages']),
   ]);
   return { events: events.filter(item => item.visible), leadership: leadership.filter(item => item.visible),
     volunteers: volunteers.filter(item => item.visible), branding, pages: Object.fromEntries(pages.rows.map(row => [row.id, row.data])) };
@@ -64,7 +64,7 @@ export async function cmsCollection(collection: Collection) {
 }
 
 async function upsert(collection: string, id: string, value: object) {
-  await query(`INSERT INTO iff_cms_records (collection, id, data, updated_at) VALUES ($1, $2, $3, $4)
+  await query(`INSERT INTO ${tables.records} (collection, id, data, updated_at) VALUES ($1, $2, $3, $4)
     ON CONFLICT (collection, id) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`,
   [collection, id, JSON.stringify(value), new Date().toISOString()]);
 }
@@ -81,7 +81,7 @@ export async function saveCmsRecord(collection: Collection, input: unknown) {
 export async function cmsSettings() {
   const [branding, pages] = await Promise.all([
     setting<Branding>('branding', 'site', defaultBranding),
-    query<{ id: string; data: PagePhotographs[string] }>('SELECT id, data FROM iff_cms_records WHERE collection = $1', ['pages']),
+    query<{ id: string; data: PagePhotographs[string] }>(`SELECT id, data FROM ${tables.records} WHERE collection = $1`, ['pages']),
   ]);
   return { branding, pages: Object.fromEntries(pages.rows.map(row => [row.id, row.data])) as PagePhotographs };
 }
@@ -100,7 +100,7 @@ export async function savePagePhotos(input: unknown) {
 
 export async function library() {
   const { rows } = await query<Omit<LibraryAsset, 'url'>>(`SELECT id, label, filename, kind AS type
-    FROM iff_media ORDER BY created_at DESC, id DESC`);
+    FROM ${tables.media} ORDER BY created_at DESC, id DESC`);
   return [...rows.map(item => ({ ...item, url: `/api/iff/media/${item.id}` })),
     ...approvedPhotos.map(src => ({ id: src, url: src, label: src.slice(8, -5).replaceAll('-', ' '), filename: src.slice(8), type: 'photo' as const }))];
 }
@@ -131,7 +131,7 @@ export async function saveMedia(data: FormData) {
   };
   if (!signatures[mime]) throw new CmsError('The file contents do not match its extension.');
   const id = randomUUID();
-  await query(`INSERT INTO iff_media (id, kind, label, filename, mime, content, created_at)
+  await query(`INSERT INTO ${tables.media} (id, kind, label, filename, mime, content, created_at)
     VALUES ($1, $2, $3, $4, $5, $6, $7)`, [id, kind, label.data, file.name, mime, content, new Date().toISOString()]);
   return { id, url: `/api/iff/media/${id}` };
 }
@@ -139,7 +139,7 @@ export async function saveMedia(data: FormData) {
 export async function mediaResponse(id: string, head: boolean) {
   if (!uuidPattern.test(id)) throw new CmsError('File not found.', 404);
   const { rows: [file] } = await query<{ mime: string; filename: string; content: Uint8Array }>(
-    'SELECT mime, filename, content FROM iff_media WHERE id = $1', [id]);
+    `SELECT mime, filename, content FROM ${tables.media} WHERE id = $1`, [id]);
   if (!file) throw new CmsError('File not found.', 404);
   const name = encodeURIComponent(file.filename).replace(/['()*]/g, char => `%${char.charCodeAt(0).toString(16)}`);
   return new Response(head ? null : Buffer.from(file.content), { headers: {
@@ -157,13 +157,13 @@ function hashPassword(password: string, salt = randomBytes(16).toString('hex')) 
 
 export async function findStaffSession(id: string, version: number) {
   if (!uuidPattern.test(id) || !Number.isSafeInteger(version)) return undefined;
-  const { rows } = await query<StaffAccount>(`SELECT id, name, email, role, active FROM iff_editor_users
+  const { rows } = await query<StaffAccount>(`SELECT id, name, email, role, active FROM ${tables.users}
     WHERE id = $1 AND active AND session_version = $2`, [id, version]);
   return rows[0];
 }
 
 export async function authenticateStaff(email: string, password: string) {
-  const { rows: [user] } = await query<LoginRecord>(`SELECT id, password_hash, session_version FROM iff_editor_users
+  const { rows: [user] } = await query<LoginRecord>(`SELECT id, password_hash, session_version FROM ${tables.users}
     WHERE email = $1 AND active`, [email.trim().toLowerCase()]);
   const stored = user?.password_hash ?? `${'0'.repeat(32)}:${'0'.repeat(128)}`;
   const salt = stored.split(':')[0];
@@ -172,7 +172,7 @@ export async function authenticateStaff(email: string, password: string) {
 }
 
 export async function staffAccounts() {
-  const { rows } = await query<StaffAccount>('SELECT id, name, email, role, active FROM iff_editor_users ORDER BY name, email');
+  const { rows } = await query<StaffAccount>(`SELECT id, name, email, role, active FROM ${tables.users} ORDER BY name, email`);
   return rows;
 }
 
@@ -186,10 +186,10 @@ export async function saveStaffAccount(input: unknown) {
   if (!id && !passwordHash) throw new CmsError('New users need a password of at least 16 characters.');
   try {
     if (!id) {
-      await query('INSERT INTO iff_editor_users (id, name, email, role, active, password_hash) VALUES ($1, $2, $3, $4, $5, $6)',
+      await query(`INSERT INTO ${tables.users} (id, name, email, role, active, password_hash) VALUES ($1, $2, $3, $4, $5, $6)`,
         [randomUUID(), name, email, role, active, passwordHash]);
     } else {
-      const { affected } = await query(`UPDATE iff_editor_users SET name = $1, email = $2, role = $3, active = $4,
+      const { affected } = await query(`UPDATE ${tables.users} SET name = $1, email = $2, role = $3, active = $4,
         password_hash = COALESCE($5::text, password_hash),
         session_version = session_version + CASE WHEN $5::text IS NOT NULL OR active <> $4 THEN 1 ELSE 0 END
         WHERE id = $6`, [name, email, role, active, passwordHash, id]);

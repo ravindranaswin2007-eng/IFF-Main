@@ -2,42 +2,56 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import pg from 'pg';
 
+const databaseSchema = process.env['IFF_DATABASE_SCHEMA'];
+if (databaseSchema && !/^[a-z][a-z0-9_]{0,62}$/.test(databaseSchema)) {
+  throw new Error('IFF_DATABASE_SCHEMA must be a lowercase PostgreSQL identifier.');
+}
+
+const table = (name: string) => databaseSchema ? `"${databaseSchema}"."${name}"` : name;
+export const tables = {
+  submissions: table('iff_submissions'),
+  publications: table('iff_publications'),
+  records: table('iff_cms_records'),
+  media: table('iff_media'),
+  users: table('iff_editor_users'),
+};
+
 const schema = `
-  CREATE TABLE IF NOT EXISTS iff_submissions (
+  CREATE TABLE IF NOT EXISTS ${tables.submissions} (
     id UUID PRIMARY KEY, kind TEXT NOT NULL, received_at TEXT NOT NULL,
     fields JSONB NOT NULL, attachment_name TEXT, attachment BYTEA
   );
-  ALTER TABLE iff_submissions ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'new';
-  ALTER TABLE iff_submissions ADD COLUMN IF NOT EXISTS owner TEXT NOT NULL DEFAULT '';
-  ALTER TABLE iff_submissions ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '';
-  ALTER TABLE iff_submissions ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 0;
-  CREATE INDEX IF NOT EXISTS iff_submissions_recent ON iff_submissions(received_at DESC, id DESC);
-  CREATE UNIQUE INDEX IF NOT EXISTS iff_newsletter_email ON iff_submissions((fields->>'email'))
+  ALTER TABLE ${tables.submissions} ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'new';
+  ALTER TABLE ${tables.submissions} ADD COLUMN IF NOT EXISTS owner TEXT NOT NULL DEFAULT '';
+  ALTER TABLE ${tables.submissions} ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '';
+  ALTER TABLE ${tables.submissions} ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 0;
+  CREATE INDEX IF NOT EXISTS iff_submissions_recent ON ${tables.submissions}(received_at DESC, id DESC);
+  CREATE UNIQUE INDEX IF NOT EXISTS iff_newsletter_email ON ${tables.submissions}((fields->>'email'))
     WHERE kind = 'newsletter';
-  CREATE TABLE IF NOT EXISTS iff_publications (
+  CREATE TABLE IF NOT EXISTS ${tables.publications} (
     id UUID PRIMARY KEY, type TEXT NOT NULL, title TEXT NOT NULL, summary TEXT NOT NULL,
     body TEXT NOT NULL, url TEXT NOT NULL, status TEXT NOT NULL,
     updated_at TEXT NOT NULL, published_at TEXT
   );
-  CREATE INDEX IF NOT EXISTS iff_publications_recent ON iff_publications(status, published_at DESC);
-  CREATE TABLE IF NOT EXISTS iff_cms_records (
+  CREATE INDEX IF NOT EXISTS iff_publications_recent ON ${tables.publications}(status, published_at DESC);
+  CREATE TABLE IF NOT EXISTS ${tables.records} (
     collection TEXT NOT NULL, id TEXT NOT NULL, data JSONB NOT NULL, updated_at TEXT NOT NULL,
     PRIMARY KEY(collection, id)
   );
-  CREATE TABLE IF NOT EXISTS iff_media (
+  CREATE TABLE IF NOT EXISTS ${tables.media} (
     id UUID PRIMARY KEY, kind TEXT NOT NULL, label TEXT NOT NULL, filename TEXT NOT NULL,
     mime TEXT NOT NULL, content BYTEA NOT NULL, created_at TEXT NOT NULL
   );
-  CREATE TABLE IF NOT EXISTS iff_editor_users (
+  CREATE TABLE IF NOT EXISTS ${tables.users} (
     id UUID PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL,
     role TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE
   );
-  ALTER TABLE iff_editor_users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 0;
-  ALTER TABLE iff_submissions ENABLE ROW LEVEL SECURITY;
-  ALTER TABLE iff_publications ENABLE ROW LEVEL SECURITY;
-  ALTER TABLE iff_cms_records ENABLE ROW LEVEL SECURITY;
-  ALTER TABLE iff_media ENABLE ROW LEVEL SECURITY;
-  ALTER TABLE iff_editor_users ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE ${tables.users} ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE ${tables.submissions} ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE ${tables.publications} ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE ${tables.records} ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE ${tables.media} ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE ${tables.users} ENABLE ROW LEVEL SECURITY;
 `;
 
 type Query = <Row extends object>(sql: string, values?: unknown[]) => Promise<{ rows: Row[]; affected: number }>;
