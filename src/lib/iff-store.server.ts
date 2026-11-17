@@ -73,15 +73,16 @@ async function connect(): Promise<Query> {
   }
 
   const caFile = process.env['IFF_DATABASE_CA_FILE'];
-  if (process.env['NODE_ENV'] === 'production' && !caFile && !vercel) throw new Error('IFF_DATABASE_CA_FILE is required.');
+  const ca = caFile ? readFileSync(caFile, 'utf8') : process.env['IFF_DATABASE_CA_CERT']?.trim();
+  if (process.env['NODE_ENV'] === 'production' && !ca && !vercel) throw new Error('A database CA certificate is required.');
   const parsed = new URL(url);
   const sslParameters = ['sslmode', 'sslcert', 'sslkey', 'sslrootcert', 'ssl'];
-  if (caFile && sslParameters.some(name => parsed.searchParams.has(name))) {
-    throw new Error('Configure PostgreSQL TLS with IFF_DATABASE_CA_FILE only.');
+  if (!vercel && ca && sslParameters.some(name => parsed.searchParams.has(name))) {
+    throw new Error('Configure PostgreSQL TLS with the database CA settings only.');
   }
   const enableChannelBinding = parsed.searchParams.get('channel_binding') === 'require';
-  if (vercel && !caFile) for (const name of sslParameters) parsed.searchParams.delete(name);
-  const ssl = caFile ? { ca: readFileSync(caFile, 'utf8'), rejectUnauthorized: true }
+  if (vercel) for (const name of sslParameters) parsed.searchParams.delete(name);
+  const ssl = ca ? { ca, rejectUnauthorized: true }
     : vercel ? { rejectUnauthorized: true } : undefined;
   const pool = new pg.Pool({ connectionString: parsed.toString(), max: vercel ? 2 : 5, connectionTimeoutMillis: 8000,
     ssl, enableChannelBinding });

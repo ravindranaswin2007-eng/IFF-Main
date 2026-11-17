@@ -54,4 +54,6 @@ After deploying, verify `/api/iff/health` and the homepage return HTTP 200. Subm
 
 Import the GitHub repository from its root. `vercel.json` selects the npm build, and Nitro emits the Vercel Node function and static assets during that build. The function region is Seoul, matching the IFF Supabase project. Connect a PostgreSQL database with a TLS certificate trusted by Node.js, and set `IFF_ADMIN_PASSWORD` in the Production environment. The database connection uses `IFF_DATABASE_URL`, `POSTGRES_URL`, or `DATABASE_URL`, in that order. Leave `IFF_DATABASE_CA_FILE` unset for a provider with a publicly trusted certificate. Set `IFF_DATABASE_SCHEMA` to an existing schema if sharing a PostgreSQL database. The application role needs `USAGE` and `CREATE` in that schema. If you use an explicit `IFF_PUBLIC_ORIGIN`, set it to the full HTTPS URL you want people to use for submitting forms.
 
+For Supabase, download the database root CA from **Database → Settings → SSL Configuration** and set the PEM text as `IFF_DATABASE_CA_CERT` so the connection verifies the server certificate and hostname.
+
 Vercel uploads are limited to 4 MB per résumé or library file to fit the Function payload limit. Publications can link to externally hosted reports and recordings. After deploying, check `/api/iff/health` and verify `/admin` with the production administrator password.
