@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { editorApi } from '@/lib/editor-api';
-import { defaultBranding, eventCategories, pagePhotoSlots, type Branding, type LibraryAsset, type PagePhotographs } from '@/lib/cms';
+import { defaultBranding, eventCategories, type Branding, type LibraryAsset, type PagePhotographs } from '@/lib/cms';
 import { maxMediaBytes, maxMediaMb } from '@/lib/upload-limits';
 
 type OnError = (error: unknown) => void;
@@ -33,7 +33,7 @@ const collectionFields: Record<Collection, Field[]> = {
 };
 const nouns: Record<Collection, string> = { events: 'event', leadership: 'leader', volunteers: 'volunteer', users: 'user' };
 
-function useAdminData<T>(path: string, onError: OnError) {
+export function useAdminData<T>(path: string, onError: OnError) {
   const [data, setData] = useState<T>();
   useEffect(() => {
     let open = true;
@@ -164,12 +164,11 @@ export function AdminLibrary({ kind, create, onError }: { kind: 'photo' | 'file'
   </>;
 }
 
-type SiteSettings = { branding: Branding; pages: PagePhotographs };
+export type SiteSettings = { branding: Branding; pages: PagePhotographs };
 
-export function AdminSettings({ mode, onError }: { mode: 'pages' | 'branding'; onError: OnError }) {
+export function AdminSettings({ onError }: { onError: OnError }) {
   const { data, setData } = useAdminData<SiteSettings>('site/settings', onError);
   const { data: library } = useLibrary(onError);
-  const [page, setPage] = useState('/');
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState('');
   const photos = library?.filter(item => item.type === 'photo') ?? [];
@@ -178,15 +177,11 @@ export function AdminSettings({ mode, onError }: { mode: 'pages' | 'branding'; o
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const choices = Object.fromEntries(['hero', 'footer'].flatMap(slot => {
-      const src = String(form.get(slot) ?? '');
-      return src ? [[slot, { src, alt: String(form.get(`${slot}Alt`) ?? '') }]] : [];
-    }));
     setPending(true);
     setNotice('');
     onError(undefined);
     try {
-      await editorApi(`site/${mode}`, mode === 'pages' ? { page, photos: choices } : Object.fromEntries(form));
+      await editorApi('site/branding', Object.fromEntries(form));
       setData(await editorApi<SiteSettings>('site/settings'));
       setNotice('Website settings saved.');
     } catch (error) { onError(error); }
@@ -195,19 +190,10 @@ export function AdminSettings({ mode, onError }: { mode: 'pages' | 'branding'; o
 
   if (!data || !library) return <p>Loading website settings…</p>;
   return <div className="admin-settings">
-    {mode === 'pages' && <label>Page<select value={page} onChange={event => { setNotice(''); setPage(event.target.value); }}>
-      {Object.entries(pagePhotoSlots).map(([path, name]) => <option key={path} value={path}>{name}</option>)}
-    </select></label>}
-    <form key={`${mode}:${page}`} className="application-form editor-form" onSubmit={save}>
-      {mode === 'pages' ? (['hero', 'footer'] as const).map(slot => <fieldset key={slot}>
-        <legend>{slot === 'hero' ? 'Hero photograph' : 'Photograph above the footer'}</legend>
-        <label>Photograph<AssetSelect items={photos} value={data.pages[page]?.[slot]?.src ?? ''} name={slot} empty="Use original photograph" /></label>
-        <label>Image description<input name={`${slot}Alt`} maxLength={240} defaultValue={data.pages[page]?.[slot]?.alt ?? ''} /></label>
-      </fieldset>) : <>
+    <form className="application-form editor-form" onSubmit={save}>
         <label>Header logo<AssetSelect items={photos} value={data.branding.logo} name="logo" empty="Use original IFF logo" /></label>
         <label>Partner names<textarea name="partners" rows={8} maxLength={4000} defaultValue={data.branding.partners ?? defaultBranding.partners} /><small>One name per line.</small></label>
         <label>Partnership brochure<AssetSelect items={brochures} value={data.branding.brochure} name="brochure" /></label>
-      </>}
       {notice && <p role="status">{notice}</p>}
       <div className="editor-actions"><Button type="submit" disabled={pending}>{pending ? 'Saving…' : 'Save'}</Button></div>
     </form>

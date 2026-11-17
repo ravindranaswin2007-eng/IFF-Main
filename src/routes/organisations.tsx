@@ -1,5 +1,4 @@
 import { useCms, usePagePhoto } from '@/lib/cms-context';
-import { photos } from '@/lib/photos';
 import { createFileRoute } from '@tanstack/react-router';
 import { Download, Handshake, Users, MessagesSquare, Lightbulb, Network, Megaphone, Target, TrendingUp, BookOpen } from 'lucide-react';
 import { Action, Eyebrow, FeatureGrid, Section } from '@/components/iff';
@@ -13,8 +12,9 @@ export const Route = createFileRoute('/organisations')({
 
 function Organisations() {
   const { branding } = useCms();
-  const hero = usePagePhoto('hero', photos.roundtable, 'Financial professionals in discussion at an IFF gathering');
-  const footer = usePagePhoto('footer', photos.reception, 'Attendees in conversation at an IFF reception');
+  const hero = usePagePhoto('hero');
+  const partnership = usePagePhoto('partnership');
+  const footer = usePagePhoto('footer');
   return <div className="organisations-page">
     <section className="org-hero">
       <img className="org-hero-image" src={hero.src} alt={hero.alt} fetchPriority="high" />
@@ -41,7 +41,7 @@ function Organisations() {
 
     <section className="conversation-band org-editorial">
       <div className="container">
-        <img src={photos.speaking} alt="A speaker at an IFF gathering" loading="lazy" />
+        <img src={partnership.src} alt={partnership.alt} loading="lazy" />
         <div>
           <Eyebrow>Partnerships that matter</Eyebrow>
           <h2>The right partnership puts your brand in the right room.</h2>

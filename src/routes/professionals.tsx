@@ -1,5 +1,4 @@
 import { usePagePhoto } from '@/lib/cms-context';
-import { photos } from '@/lib/photos';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import { BrainCircuit, TrendingUp, ShieldCheck, Coins, ChartNoAxesCombined, CreditCard, LockKeyhole, Users, BookOpen, MessageCircle, CalendarDays, Megaphone } from 'lucide-react';
@@ -24,8 +23,8 @@ const communities = [
 ];
 
 function Professionals() {
-  const hero = usePagePhoto('hero', photos.career, 'Professionals networking at an IFF gathering');
-  const footer = usePagePhoto('footer', photos.leadership, 'A group photograph at an IFF leadership gathering');
+  const hero = usePagePhoto('hero');
+  const footer = usePagePhoto('footer');
   const [selected, setSelected] = useState(0);
   const current = communities[selected] ?? communities[0];
   if (!current) return null;

@@ -2,7 +2,7 @@ import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { query, tables } from './iff-store.server';
 import {
   authenticateStaff, cmsCollection, cmsSettings, CmsError, findStaffSession, library,
-  mediaResponse, saveBranding, saveCmsRecord, saveMedia, savePagePhotos, saveStaffAccount, staffAccounts,
+  mediaResponse, publishPagePhoto, saveBranding, saveCmsRecord, saveMedia, savePagePhotos, saveStaffAccount, staffAccounts,
 } from './iff-cms.server';
 import {
   inboxKinds, inboxStatuses, inboxUpdateSchema, publicationSchema, submissionSchema,
@@ -225,6 +225,11 @@ async function editorApi(request: Request, url: URL, action: string) {
   if (request.method === 'POST' && action === 'site/pages') {
     await savePagePhotos(await readJson(request, 8192));
     return json({ ok: true });
+  }
+  if (request.method === 'POST' && action === 'site/page-photo') {
+    const body = await boundedBody(request, maxMediaBytes + 32_768);
+    const data = await body.formData().catch(() => { throw new InvalidRequest('Choose a photograph to publish.'); });
+    return json(await publishPagePhoto(data));
   }
   if (request.method === 'GET' && action === 'site/library') return json(await library());
   if (request.method === 'POST' && action === 'site/library') {

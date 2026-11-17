@@ -29,7 +29,8 @@ Set `IFF_ADMIN_PASSWORD` in the server environment before starting if you want t
 - **Content** manages events and Knowledge Hub publications. Use the file library or a public URL for reports and recordings. Publication drafts stay private until published.
 - **People** edits leadership and volunteer profiles. Visible profiles appear on About Us.
 - **Library** stores approved photographs, PDFs and audio files for the public site. Each upload can be up to 20 MB. Use the enquiries inbox for private résumés.
-- **Website** sets hero and closing photographs, the logo, the partner names and the partnership brochure.
+- **Website → Page photographs** previews the images on each page. Paste or drop an approved photograph into a placement, choose a file, or select a library image, then select **Publish photo**. The public page picks up the change on its next load. Manage event and profile photographs in their respective collections.
+- **Website → Logo, partners & brochure** sets the site logo, partner names and partnership brochure.
 
 The approved event photos in `public/photos/` were sourced from the [IFF photo shortlist](https://drive.google.com/drive/folders/1VwYvFv-1NnxSosQGMo0VXfr0bHy-m8DK). The volunteer section is pending the form response export and approved headshots.
 

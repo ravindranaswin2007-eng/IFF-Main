@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { AdminDashboard, AdminFrame, adminSections, type AdminSection } from '@/components/admin-dashboard';
+import { AdminPagePhotos } from '@/components/admin-page-photos';
 import { AdminLibrary, AdminRecords, AdminSettings, AssetSelect, useLibrary } from '@/components/admin-site-content';
 import type { EditorIdentity } from '@/lib/cms';
 import { AdminInbox } from '@/components/admin-inbox';
@@ -153,7 +154,8 @@ function Admin() {
       {(section === 'events' || section === 'leadership' || section === 'volunteers' || (section === 'users' && user.role === 'admin')) &&
         <AdminRecords key={`${section}:${create}`} collection={section} create={create} onError={report} />}
       {(section === 'photos' || section === 'files') && <AdminLibrary key={`${section}:${create}`} kind={section === 'photos' ? 'photo' : 'file'} create={create} onError={report} />}
-      {(section === 'pages' || section === 'branding') && <AdminSettings key={section} mode={section} onError={report} />}
+      {section === 'pages' && <AdminPagePhotos onError={report} />}
+      {section === 'branding' && <AdminSettings onError={report} />}
       {section === 'users' && user.role !== 'admin' && <p>Administrator access is required.</p>}
     </>}
   </AdminFrame>;

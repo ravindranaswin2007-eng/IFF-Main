@@ -7,7 +7,8 @@ export const pagePhotoSlots = {
 } as const;
 
 export type PhotoChoice = { src: string; alt: string };
-export type PagePhotographs = Record<string, { hero?: PhotoChoice; footer?: PhotoChoice }>;
+export type PhotoSlot = 'hero' | 'footer' | 'partnership' | 'career-conversation' | `gallery-${1 | 2 | 3 | 4 | 5}`;
+export type PagePhotographs = Record<string, Partial<Record<PhotoSlot, PhotoChoice>>>;
 export type Branding = { logo: string; brochure: string; partners: string };
 
 export type SiteEvent = {

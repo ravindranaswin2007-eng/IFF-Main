@@ -3,9 +3,9 @@ import { z } from 'zod';
 import {
   baselineEvents, baselineLeadership, defaultBranding, eventCategories, pagePhotoSlots,
   type Branding, type LibraryAsset, type PagePhotographs, type PublicCms, type SiteEvent,
-  type SitePerson, type StaffAccount,
+  type SitePerson, type StaffAccount, type PhotoChoice,
 } from './cms';
-import { photos } from './photos';
+import { photoPlacements, photos, type PhotoPage } from './photos';
 import { query, tables } from './iff-store.server';
 import { maxMediaBytes, maxMediaMb } from './upload-limits';
 
@@ -95,7 +95,9 @@ export async function saveBranding(input: unknown) {
 export async function savePagePhotos(input: unknown) {
   const result = z.object({ page: z.string(), photos: pageSchema }).safeParse(input);
   if (!result.success || !Object.hasOwn(pagePhotoSlots, result.data.page)) throw new CmsError('Choose a page and valid photographs.');
-  await upsert('pages', result.data.page, result.data.photos);
+  await query(`INSERT INTO ${tables.records} AS page (collection, id, data, updated_at) VALUES ('pages', $1, $2, $3)
+    ON CONFLICT (collection, id) DO UPDATE SET data = (page.data - 'hero' - 'footer') || EXCLUDED.data,
+      updated_at = EXCLUDED.updated_at`, [result.data.page, JSON.stringify(result.data.photos), new Date().toISOString()]);
 }
 
 export async function library() {
@@ -110,12 +112,8 @@ const mimeTypes: Record<string, string> = {
   pdf: 'application/pdf', mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav',
 };
 
-export async function saveMedia(data: FormData) {
-  const label = short.safeParse(data.get('label'));
-  const kind = data.get('kind');
-  const file = data.get('file');
-  if (!label.success || (kind !== 'photo' && kind !== 'file') || !(file instanceof File) ||
-      !file.size || file.size > maxMediaBytes || file.name.length > 200) throw new CmsError(`Choose a file up to ${maxMediaMb} MB and enter a title.`);
+async function readMedia(kind: LibraryAsset['type'], label: string, file: File) {
+  if (!file.size || file.size > maxMediaBytes || file.name.length > 200) throw new CmsError(`Choose a file up to ${maxMediaMb} MB with a name under 200 characters.`);
   const extension = file.name.split('.').at(-1)?.toLowerCase() ?? '';
   const mime = mimeTypes[extension];
   if (!mime || (kind === 'photo') !== mime.startsWith('image/')) throw new CmsError('Upload a JPG, PNG or WebP photo, or a PDF or audio file.');
@@ -131,9 +129,56 @@ export async function saveMedia(data: FormData) {
   };
   if (!signatures[mime]) throw new CmsError('The file contents do not match its extension.');
   const id = randomUUID();
+  return { asset: { id, label, url: `/api/iff/media/${id}`, filename: file.name, type: kind }, mime, content };
+}
+
+export async function saveMedia(data: FormData) {
+  const label = short.safeParse(data.get('label'));
+  const kind = data.get('kind');
+  const file = data.get('file');
+  if (!label.success || (kind !== 'photo' && kind !== 'file') || !(file instanceof File)) {
+    throw new CmsError('Choose a file and enter a title.');
+  }
+  const { asset, mime, content } = await readMedia(kind, label.data, file);
   await query(`INSERT INTO ${tables.media} (id, kind, label, filename, mime, content, created_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7)`, [id, kind, label.data, file.name, mime, content, new Date().toISOString()]);
-  return { id, url: `/api/iff/media/${id}` };
+    VALUES ($1, $2, $3, $4, $5, $6, $7)`, [asset.id, kind, label.data, asset.filename, mime, content, new Date().toISOString()]);
+  return { id: asset.id, url: asset.url };
+}
+
+export async function publishPagePhoto(data: FormData) {
+  const fields = z.object({ page: z.string(), slot: z.string(), src: photoUrl,
+    alt: z.string().trim().max(240) }).safeParse(Object.fromEntries(data));
+  if (!fields.success || !Object.hasOwn(photoPlacements, fields.data.page)) {
+    throw new CmsError('Choose a valid page and photograph.');
+  }
+  const { page, slot, src, alt } = fields.data;
+  const placement = photoPlacements[page as PhotoPage].find(item => item.slot === slot);
+  if (!placement) throw new CmsError('This page does not have that photo placement.');
+
+  const file = data.get('file');
+  if (file !== null && !(file instanceof File)) throw new CmsError('Choose an image file.');
+  if (file && src) throw new CmsError('Choose one image source.');
+  const upload = file ? await readMedia('photo', `${pagePhotoSlots[page as PhotoPage]} · ${placement.label}`, file) : undefined;
+  if (mediaPath.test(src)) {
+    const { rows } = await query(`SELECT id FROM ${tables.media} WHERE id = $1 AND kind = 'photo'`, [src.split('/').at(-1)]);
+    if (!rows.length) throw new CmsError('Choose a photograph from the photo library.');
+  }
+
+  const published = upload?.asset.url ?? src;
+  const choice: PhotoChoice | null = published ? { src: published, alt } : null;
+  const values = [page, JSON.stringify(choice ? { [slot]: choice } : {}), new Date().toISOString(), slot];
+  const update = `INSERT INTO ${tables.records} AS page (collection, id, data, updated_at) VALUES ('pages', $1, $2, $3)
+    ON CONFLICT (collection, id) DO UPDATE SET data = (page.data - $4::text) || EXCLUDED.data,
+      updated_at = EXCLUDED.updated_at`;
+  if (upload) {
+    await query(`WITH uploaded AS (
+      INSERT INTO ${tables.media} (id,kind,label,filename,mime,content,created_at)
+      VALUES ($5,'photo',$6,$7,$8,$9,$3) RETURNING id
+    ) ${update}`, [...values, upload.asset.id, upload.asset.label, upload.asset.filename, upload.mime, upload.content]);
+  } else {
+    await query(update, values);
+  }
+  return { choice, asset: upload?.asset ?? null };
 }
 
 export async function mediaResponse(id: string, head: boolean) {

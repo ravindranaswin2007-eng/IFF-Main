@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
-import { Callout, Hero, Section, photos } from '@/components/iff';
+import { Callout, Hero, Section } from '@/components/iff';
 import { PublicationCards } from '@/components/publication-cards';
 import { listPublications } from '@/lib/publications';
 import { publicationTypes } from '@/lib/submissions';
@@ -20,8 +20,7 @@ function Knowledge() {
   const entries = filter === 'All' ? publications : publications.filter(post => post.type === filter);
 
   return <>
-    <Hero eyebrow="KNOWLEDGE HUB" action="" image={photos.highlight}
-      caption="Presenters at an IFF event" title={<>Ideas and insights from the <em>BFSI</em> community.</>}
+    <Hero eyebrow="KNOWLEDGE HUB" action="" title={<>Ideas and insights from the <em>BFSI</em> community.</>}
       description="Explore blogs, reports, podcasts and webinars from India’s financial community." />
     <Section title="Publications">
       <div className="filter-tabs" role="group" aria-label="Publication types">
@@ -30,7 +29,7 @@ function Knowledge() {
       </div>
       <PublicationCards entries={entries} />
     </Section>
-    <Callout title="Bring your perspective to the conversation." image={photos.roundtable}
+    <Callout title="Bring your perspective to the conversation."
       text="Share your expertise with the IFF community." action="Contribute Your Expertise" to="/speaking" />
   </>;
 }

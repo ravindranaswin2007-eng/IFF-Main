@@ -30,14 +30,14 @@ export function Action({ children, to = '/contact', secondary = false, topic }: 
 export function Eyebrow({ children }: { children: ReactNode }) { return <div className="eyebrow"><span />{children}</div>; }
 export function Section({ children, title, eyebrow, description, blue = false, centered = false, id }: { children?: ReactNode; title?: string; eyebrow?: string; description?: string; blue?: boolean; centered?: boolean; id?: string }) { return <section id={id} className={`section ${blue ? 'section-blue' : ''}`}><div className="container">{title && <div className={`section-heading ${centered ? 'centered' : ''}`}><Eyebrow>{eyebrow}</Eyebrow><h2>{title}</h2>{description && <p>{description}</p>}</div>}{children}</div></section>; }
 export function Hero({
-  eyebrow, title, description, image, caption, action = 'Become a Member', to = '/contact',
+  eyebrow, title, description, action = 'Become a Member', to = '/contact',
   topic, stats, children, dark = false,
 }: {
-  eyebrow: string; title: ReactNode; description: string; image?: string; caption?: string;
+  eyebrow: string; title: ReactNode; description: string;
   action?: string; to?: Destination; topic?: typeof topics[number] | undefined; stats?: [string, string][];
   children?: ReactNode; dark?: boolean;
 }) {
-  const photo = usePagePhoto('hero', image, caption);
+  const photo = usePagePhoto('hero');
   const cover = dark && photo.src;
   return (
     <section className={`page-hero ${dark ? 'hero-dark' : ''} ${photo.src ? 'has-image' : ''} ${cover ? 'hero-cover' : ''}`}>
