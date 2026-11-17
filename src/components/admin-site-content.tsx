@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
-import { editorApi } from '@/lib/editor-api';
+import { editorApi, editorMediaBody } from '@/lib/editor-api';
 import { defaultBranding, eventCategories, type Branding, type LibraryAsset, type PagePhotographs } from '@/lib/cms';
 import { maxMediaBytes, maxMediaMb } from '@/lib/upload-limits';
 
@@ -52,18 +52,28 @@ export function AssetSelect({ items, value = '', name, empty = 'None' }: { items
   const [selected, setSelected] = useState(value);
   return <select name={name} value={selected} onChange={event => setSelected(event.target.value)}>
     <option value="">{empty}</option>
+    {selected && !items.some(item => item.url === selected) && <option value={selected}>Current selection</option>}
     {items.map(item => <option key={item.id} value={item.url}>{item.label}</option>)}
   </select>;
+}
+
+export function RecordUploadInput({ kind, label }: { kind: LibraryAsset['type']; label: string }) {
+  return <label>{label}
+    <input className="editor-file-input" name="upload" type="file"
+      accept={kind === 'photo' ? '.jpg,.jpeg,.png,.webp' : '.pdf,.mp3,.m4a,.wav'} />
+    <small>{kind === 'photo' ? 'JPG, PNG or WebP' : 'PDF, MP3, M4A or WAV'} up to {maxMediaMb} MB. Uploads when you save.</small>
+  </label>;
 }
 
 export function AdminRecords({ collection, create, onError }: { collection: Collection; create: boolean; onError: OnError }) {
   const path = `site/${collection}`;
   const { data, setData } = useAdminData<EditableRecord[]>(path, onError);
-  const { data: library } = useLibrary(onError);
+  const { data: library, setData: setLibrary } = useLibrary(onError);
   const [selection, setSelection] = useState<string>(create ? 'new' : '');
   const selected = data?.find(item => item.id === selection);
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState('');
+  const [formVersion, setFormVersion] = useState(0);
   const fields = collectionFields[collection];
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -78,11 +88,16 @@ export function AdminRecords({ collection, create, onError }: { collection: Coll
     setNotice('');
     onError(undefined);
     try {
-      const result = await editorApi<{ id?: string }>(path, payload);
-      setData(await editorApi<EditableRecord[]>(path));
+      const body = editorMediaBody(payload, form);
+      const result = await editorApi<{ id?: string }>(path, body);
+      const [records, updatedLibrary] = await Promise.all([
+        editorApi<EditableRecord[]>(path), body instanceof FormData ? editorApi<LibraryAsset[]>('site/library') : undefined,
+      ]);
+      setData(records);
+      if (updatedLibrary) setLibrary(updatedLibrary);
       setSelection(result.id ?? selected?.id ?? '');
+      setFormVersion(version => version + 1);
       setNotice('Saved.');
-      if (collection === 'users') element.reset();
     } catch (error) { onError(error); }
     finally { setPending(false); }
   }
@@ -97,16 +112,22 @@ export function AdminRecords({ collection, create, onError }: { collection: Coll
       </button>)}
       {data?.length === 0 && <p>No records yet.</p>}
     </aside>
-    {selection ? <form key={selection} className="application-form editor-form" onSubmit={save}>
+    {selection ? <form key={`${selection}:${formVersion}`} className="application-form editor-form" onSubmit={save}>
       <h2>{selected ? `Edit ${nouns[collection]}` : `New ${nouns[collection]}`}</h2>
       {fields.map(field => {
         const value = String(selected?.[field.name] ?? '');
         if (field.type === 'check') return <label className="admin-check" key={field.name}>
           <input type="checkbox" name={field.name} defaultChecked={Boolean(selected?.[field.name] ?? field.name !== 'featured')} />{field.label}
         </label>;
+        if (field.type === 'photo') return <fieldset className="editor-attachment" key={field.name}>
+          <legend>{field.label}</legend>
+          <RecordUploadInput kind="photo" label={collection === 'events' ? 'Upload event image' : 'Upload profile photo'} />
+          <label>Or select from the photo library
+            <AssetSelect items={library?.filter(item => item.type === 'photo') ?? []} value={value} name={field.name} />
+          </label>
+        </fieldset>;
         return <label key={field.name}>{field.label}
-          {field.type === 'photo' ? <AssetSelect items={library?.filter(item => item.type === 'photo') ?? []} value={value} name={field.name} /> :
-            field.options ? <select name={field.name} defaultValue={value || field.options[0]}>{field.options.map(option => <option key={option}>{option}</option>)}</select> :
+          {field.options ? <select name={field.name} defaultValue={value || field.options[0]}>{field.options.map(option => <option key={option}>{option}</option>)}</select> :
             field.type === 'textarea' ? <textarea name={field.name} rows={5} maxLength={field.max} required defaultValue={value} /> :
             <input name={field.name} defaultValue={value} type={field.type ?? 'text'} maxLength={field.max ?? (field.type === 'url' ? 2000 : 180)}
               required={!field.optional && !(field.type === 'password' && selected)} minLength={field.type === 'password' ? 16 : undefined}

@@ -1,8 +1,9 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { query, tables } from './iff-store.server';
 import {
-  authenticateStaff, cmsCollection, cmsSettings, CmsError, findStaffSession, library,
-  mediaResponse, publishPagePhoto, saveBranding, saveCmsRecord, saveMedia, savePagePhotos, saveStaffAccount, staffAccounts,
+  attachUploadedValue, authenticateStaff, cmsCollection, cmsSettings, CmsError, findStaffSession, library,
+  mediaResponse, publishPagePhoto, queryWithMedia, readMedia, saveBranding, saveCmsRecord, saveMedia, savePagePhotos,
+  saveStaffAccount, staffAccounts,
 } from './iff-cms.server';
 import {
   inboxKinds, inboxStatuses, inboxUpdateSchema, publicationSchema, submissionSchema,
@@ -79,6 +80,21 @@ async function readJson(request: Request, maxBytes: number) {
   }
   const body = await boundedBody(request, maxBytes);
   return body.json().catch(() => { throw new InvalidRequest('Invalid JSON.'); });
+}
+
+async function readMediaEdit(request: Request, maxJsonBytes: number): Promise<{ record: unknown; file?: File }> {
+  if (!request.headers.get('content-type')?.startsWith('multipart/form-data')) {
+    return { record: await readJson(request, maxJsonBytes) };
+  }
+  const body = await boundedBody(request, maxMediaBytes + maxJsonBytes + 32_768);
+  const form = await body.formData().catch(() => { throw new InvalidRequest('Choose a valid upload.'); });
+  const record = form.get('record');
+  const file = form.get('file');
+  if (typeof record !== 'string' || Buffer.byteLength(record) > maxJsonBytes || !(file instanceof File)) {
+    throw new InvalidRequest('The uploaded file or record is invalid.');
+  }
+  try { return { record: JSON.parse(record) as unknown, file }; }
+  catch { throw new InvalidRequest('Invalid record data.'); }
 }
 
 function safeEqual(first: string, second: string) {
@@ -199,6 +215,19 @@ async function updateInboxEntry(request: Request, id: string) {
   return json(rows[0]);
 }
 
+async function deleteEnquiry(request: Request, id: string) {
+  if (!uuid.test(id)) throw new InvalidRequest('Enquiry not found.', 404);
+  const input: unknown = await readJson(request, 128);
+  const revision = input && typeof input === 'object' && 'revision' in input ? input.revision : undefined;
+  if (typeof revision !== 'number' || !Number.isInteger(revision) || revision < 0 || revision > 2_147_483_647) {
+    throw new InvalidRequest('Refresh the inbox before deleting this enquiry.');
+  }
+  const { affected } = await query(`DELETE FROM ${tables.submissions}
+    WHERE id = $1 AND kind <> 'newsletter' AND revision = $2`, [id, revision]);
+  if (!affected) throw new InvalidRequest('The enquiry has changed or is unavailable. Refresh the inbox.', 409);
+  return json({ ok: true });
+}
+
 async function editorApi(request: Request, url: URL, action: string) {
   const password = process.env['IFF_ADMIN_PASSWORD'];
   if (!password || password.length < 16) {
@@ -215,7 +244,10 @@ async function editorApi(request: Request, url: URL, action: string) {
   if (action === 'site/events' || action === 'site/leadership' || action === 'site/volunteers') {
     const collection = action.split('/')[1] as 'events' | 'leadership' | 'volunteers';
     if (request.method === 'GET') return json(await cmsCollection(collection));
-    if (request.method === 'POST') return json(await saveCmsRecord(collection, await readJson(request, 16_384)));
+    if (request.method === 'POST') {
+      const { record, file } = await readMediaEdit(request, 16_384);
+      return json(await saveCmsRecord(collection, record, file));
+    }
   }
   if (request.method === 'GET' && action === 'site/settings') return json(await cmsSettings());
   if (request.method === 'POST' && action === 'site/branding') {
@@ -251,6 +283,10 @@ async function editorApi(request: Request, url: URL, action: string) {
   if (request.method === 'POST' && action.startsWith('inbox/')) {
     return updateInboxEntry(request, action.slice('inbox/'.length));
   }
+  if (request.method === 'DELETE' && action.startsWith('inbox/')) {
+    if (user.role !== 'admin') throw new InvalidRequest('Administrator access is required.', 403);
+    return deleteEnquiry(request, action.slice('inbox/'.length));
+  }
   if (request.method === 'GET' && action.startsWith('resume/')) {
     const id = action.slice('resume/'.length);
     if (!uuid.test(id)) throw new InvalidRequest('Résumé unavailable.', 404);
@@ -267,19 +303,21 @@ async function editorApi(request: Request, url: URL, action: string) {
   }
   if (request.method === 'GET' && action === 'publications') return json(await adminPublications());
   if (request.method === 'POST' && (action === 'publications' || action.startsWith('publications/'))) {
-    const parsed = publicationSchema.safeParse(await readJson(request, 192_000));
+    const { record, file } = await readMediaEdit(request, 192_000);
+    const upload = file ? await readMedia('file', file.name, file) : undefined;
+    const parsed = publicationSchema.safeParse(upload ? attachUploadedValue(record, 'url', upload.asset.url) : record);
     if (!parsed.success) throw new InvalidRequest(parsed.error.issues[0]?.message || 'Check the publication fields.');
     const post = parsed.data;
     const now = new Date().toISOString();
     const id = action === 'publications' ? randomUUID() : action.slice('publications/'.length);
     const publishedAt = post.status === 'published' ? now : null;
     if (action === 'publications') {
-      await query(`INSERT INTO ${tables.publications} (id, type, title, summary, body, url, status, updated_at, published_at)
+      await queryWithMedia(upload, `INSERT INTO ${tables.publications} (id, type, title, summary, body, url, status, updated_at, published_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [id, post.type, post.title, post.summary, post.body, post.url, post.status, now, publishedAt]);
     } else {
       if (!uuid.test(id)) throw new InvalidRequest('Publication no longer exists.', 404);
-      const { affected } = await query(`UPDATE ${tables.publications} SET type = $1, title = $2, summary = $3, body = $4, url = $5,
+      const { affected } = await queryWithMedia(upload, `UPDATE ${tables.publications} SET type = $1, title = $2, summary = $3, body = $4, url = $5,
         status = $6, updated_at = $7, published_at = CASE WHEN $8::text IS NULL THEN NULL ELSE COALESCE(published_at, $8) END
         WHERE id = $9`, [post.type, post.title, post.summary, post.body, post.url, post.status, now, publishedAt, id]);
       if (!affected) throw new InvalidRequest('Publication no longer exists.', 404);

@@ -2,10 +2,10 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { AdminDashboard, AdminFrame, adminSections, type AdminSection } from '@/components/admin-dashboard';
 import { AdminPagePhotos } from '@/components/admin-page-photos';
-import { AdminLibrary, AdminRecords, AdminSettings, AssetSelect, useLibrary } from '@/components/admin-site-content';
+import { AdminLibrary, AdminRecords, AdminSettings, AssetSelect, RecordUploadInput, useLibrary } from '@/components/admin-site-content';
 import type { EditorIdentity } from '@/lib/cms';
 import { AdminInbox } from '@/components/admin-inbox';
-import { editorApi } from '@/lib/editor-api';
+import { editorApi, editorMediaBody } from '@/lib/editor-api';
 import { Button } from '@/components/ui/button';
 import { pageHead } from '@/lib/site';
 import { publicationTypes, type Publication } from '@/lib/submissions';
@@ -30,6 +30,7 @@ function Admin() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [publicationVersion, setPublicationVersion] = useState(0);
 
   const report = useCallback((problem: unknown) => {
     if (problem === undefined) {
@@ -93,17 +94,19 @@ function Admin() {
     const form = event.currentTarget;
     const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
     const status = submitter?.value ?? 'draft';
-    const { file, ...data } = Object.fromEntries(new FormData(form));
+    const formData = new FormData(form);
+    const { file, upload: _upload, ...data } = Object.fromEntries(formData);
     if (file) data['url'] = file;
     setPending(true);
     setError('');
     setNotice('');
     try {
       const path = selection ? `publications/${selection.id}` : 'publications';
-      const { id } = await editorApi<{ id: string }>(path, { ...data, status });
+      const { id } = await editorApi<{ id: string }>(path, editorMediaBody({ ...data, status }, formData));
       const refreshed = await editorApi<Publication[]>('publications');
       setPosts(refreshed);
       setSelection(refreshed.find(post => post.id === id));
+      setPublicationVersion(version => version + 1);
       setNotice(status === 'published' ? 'Published to the Knowledge Hub.' : 'Draft saved.');
     } catch (problem) {
       report(problem);
@@ -127,13 +130,13 @@ function Admin() {
       <h1 className="admin-page-title">{adminSections[section]}</h1>
         {section === 'publications' && <div className="editor-grid">
           <aside className="editor-post-list">
-            <Button onClick={() => { setSelection(undefined); setNotice(''); setError(''); }}>New publication</Button>
-            {posts.map(post => <button type="button" key={post.id} aria-pressed={selection?.id === post.id}
+            <Button disabled={pending} onClick={() => { setSelection(undefined); setNotice(''); setError(''); setPublicationVersion(version => version + 1); }}>New publication</Button>
+            {posts.map(post => <button type="button" key={post.id} aria-pressed={selection?.id === post.id} disabled={pending}
               onClick={() => { setSelection(post); setNotice(''); setError(''); }}>
               <strong>{post.title}</strong><small>{post.type} · {post.status}</small>
             </button>)}
           </aside>
-          <form key={selection?.id ?? 'new'} className="application-form editor-form" onSubmit={save}>
+          <form key={`${selection?.id ?? 'new'}:${publicationVersion}`} className="application-form editor-form" onSubmit={save}>
             <h2>{selection ? 'Edit publication' : 'New publication'}</h2>
             <label>Type<select name="type" defaultValue={selection?.type}>
               {publicationTypes.map(type => <option key={type}>{type}</option>)}
@@ -150,7 +153,8 @@ function Admin() {
             </div>
           </form>
         </div>}
-      {(section === 'enquiries' || section === 'newsletter') && <AdminInbox key={section} scope={section} onError={report} />}
+      {(section === 'enquiries' || section === 'newsletter') && <AdminInbox key={section} scope={section} onError={report}
+        canDelete={section === 'enquiries' && user.role === 'admin'} />}
       {(section === 'events' || section === 'leadership' || section === 'volunteers' || (section === 'users' && user.role === 'admin')) &&
         <AdminRecords key={`${section}:${create}`} collection={section} create={create} onError={report} />}
       {(section === 'photos' || section === 'files') && <AdminLibrary key={`${section}:${create}`} kind={section === 'photos' ? 'photo' : 'file'} create={create} onError={report} />}
@@ -164,10 +168,12 @@ function Admin() {
 function PublicationAssets({ url, onError }: { url: string; onError: (error: unknown) => void }) {
   const { data: library } = useLibrary(onError);
   const stored = url.startsWith('/api/iff/media/');
-  return <>
-    <label>Publication link<input name="url" type="url" maxLength={2000} defaultValue={stored ? '' : url} /></label>
-    <label>Or choose a file<AssetSelect items={library?.filter(item => item.type === 'file') ?? []} name="file" value={stored ? url : ''} />
-      <small>A selected library file takes precedence over the link.</small>
+  return <fieldset className="editor-attachment">
+    <legend>Publication file or link</legend>
+    <RecordUploadInput kind="file" label="Choose a file from your device" />
+    <label>Or select from the file library<AssetSelect items={library?.filter(item => item.type === 'file') ?? []} name="file" value={stored ? url : ''} />
     </label>
-  </>;
+    <label>Or enter a publication link<input name="url" type="url" maxLength={2000} defaultValue={stored ? '' : url} /></label>
+    <small>A device upload replaces the selected file or link. To switch from a library file to a link, choose None in the library.</small>
+  </fieldset>;
 }

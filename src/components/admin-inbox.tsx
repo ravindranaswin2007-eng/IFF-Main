@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
+import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { editorApi, editorRequest } from '@/lib/editor-api';
 import { inboxKinds, inboxStatuses, type InboxEntry, type InboxPage, type InboxUpdate } from '@/lib/submissions';
 
@@ -8,7 +10,9 @@ const fieldLabels: Record<string, string> = {
   designation: 'Designation', linkedin: 'LinkedIn', expertise: 'Expertise', experience: 'Speaking experience',
 };
 
-export function AdminInbox({ onError, scope }: { onError: (error: unknown) => void; scope: 'enquiries' | 'newsletter' }) {
+export function AdminInbox({ onError, scope, canDelete }: {
+  onError: (error: unknown) => void; scope: 'enquiries' | 'newsletter'; canDelete: boolean;
+}) {
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState('');
   const [status, setStatus] = useState('');
@@ -59,6 +63,12 @@ export function AdminInbox({ onError, scope }: { onError: (error: unknown) => vo
     setNotice('Submission updated.');
   }
 
+  function deletedEntry() {
+    if (inbox?.entries.length === 1 && page > 0 && !inbox.hasNext) setPage(page - 1);
+    refreshInbox();
+    setNotice('Enquiry deleted.');
+  }
+
   async function exportInbox() {
     onError(undefined);
     setExporting(true);
@@ -102,7 +112,8 @@ export function AdminInbox({ onError, scope }: { onError: (error: unknown) => vo
     <div aria-busy={loading}>
       {loading ? <p>Loading submissions…</p> : <>
         {inbox?.entries.length === 0 && <p>No submissions match these filters.</p>}
-        {inbox?.entries.map(entry => <InboxRow key={entry.id} entry={entry} onUpdate={updateEntry} onError={onError} />)}
+        {inbox?.entries.map(entry => <InboxRow key={entry.id} entry={entry} onUpdate={updateEntry} onError={onError}
+          {...(canDelete ? { onDelete: deletedEntry } : {})} />)}
         {inbox && (page > 0 || inbox.hasNext) && <div className="editor-actions">
           <Button disabled={page === 0} onClick={() => goToPage(page - 1)}>Previous</Button>
           <span>Page {page + 1}</span>
@@ -113,13 +124,17 @@ export function AdminInbox({ onError, scope }: { onError: (error: unknown) => vo
   </section>;
 }
 
-function InboxRow({ entry, onUpdate, onError }: {
+function InboxRow({ entry, onUpdate, onError, onDelete }: {
   entry: InboxEntry;
   onUpdate: (id: string, updates: InboxUpdate) => void;
   onError: (error: unknown) => void;
+  onDelete?: () => void;
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -135,6 +150,20 @@ function InboxRow({ entry, onUpdate, onError }: {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function remove() {
+    if (!onDelete || deleting) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await editorApi(`inbox/${entry.id}`, { revision: entry.revision }, 'DELETE');
+      setConfirming(false);
+      onDelete();
+    } catch (problem) {
+      if (problem instanceof Error && 'status' in problem && problem.status === 401) onError(problem);
+      else setDeleteError(problem instanceof Error ? problem.message : 'The enquiry could not be deleted.');
+    } finally { setDeleting(false); }
   }
 
   return <details className="editor-inbox-item">
@@ -156,7 +185,25 @@ function InboxRow({ entry, onUpdate, onError }: {
         <label>Owner<input name="owner" maxLength={120} defaultValue={entry.owner} /></label>
         <label>Internal notes<textarea name="notes" rows={4} maxLength={5000} defaultValue={entry.notes} /></label>
         {error && <p className="form-notice form-error" role="alert">{error}</p>}
-        <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save follow-up'}</Button>
+        <div className="editor-actions">
+          <Button type="submit" disabled={saving || deleting}>{saving ? 'Saving…' : 'Save follow-up'}</Button>
+          {onDelete && <AlertDialog open={confirming} onOpenChange={open => {
+            if (!deleting) { setConfirming(open); setDeleteError(''); }
+          }}>
+            <AlertDialogTrigger asChild><Button type="button" variant="destructive" disabled={saving || deleting}>Delete enquiry</Button></AlertDialogTrigger>
+            <AlertDialogContent className="editor-delete-dialog">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete this enquiry?</AlertDialogTitle>
+                <AlertDialogDescription>This permanently removes the submission, any attachment and its follow-up notes.</AlertDialogDescription>
+              </AlertDialogHeader>
+              {deleteError && <p role="alert">{deleteError}</p>}
+              <AlertDialogFooter>
+                <AlertDialogCancel type="button" disabled={deleting}>Cancel</AlertDialogCancel>
+                <Button type="button" variant="destructive" disabled={deleting} onClick={remove}>{deleting ? 'Deleting…' : 'Delete enquiry'}</Button>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>}
+        </div>
       </form>
     </div>
   </details>;

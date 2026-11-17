@@ -591,6 +591,11 @@
 .editor-login { max-width: 410px; }
 .editor-form h2 { margin-bottom: 8px; }
 .editor-form label, .editor-login label { display: grid; gap: 6px; }
+.editor-attachment { display: grid; gap: 12px; border: 1px solid var(--border); border-radius: 6px; padding: 14px; min-width: 0; }
+.editor-attachment legend { padding-inline: 6px; font-weight: 650; }
+.editor-attachment small { color: var(--muted-foreground); }
+.editor-file-input::file-selector-button { margin-inline-end: 10px; cursor: pointer; padding: 4px 8px; border-radius: 4px; background: var(--accent); color: var(--foreground); }
+.editor-delete-dialog { max-width: min(calc(100% - 28px), 32rem); }
 .editor-post-list > button[aria-pressed] { text-align: left; padding: 12px 16px; background: var(--section); border-radius: 8px; overflow-wrap: anywhere; }
 .editor-post-list > button[aria-pressed="true"] { outline: 2px solid var(--teal); }
 .editor-post-list small { display: block; text-transform: capitalize; }

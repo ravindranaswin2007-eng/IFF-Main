@@ -63,18 +63,19 @@ export async function cmsCollection(collection: Collection) {
   return collectionRows<SitePerson>(collection, collection === 'leadership' ? baselineLeadership : []);
 }
 
-async function upsert(collection: string, id: string, value: object) {
-  await query(`INSERT INTO ${tables.records} (collection, id, data, updated_at) VALUES ($1, $2, $3, $4)
+async function upsert(collection: string, id: string, value: object, upload?: MediaUpload) {
+  await queryWithMedia(upload, `INSERT INTO ${tables.records} (collection, id, data, updated_at) VALUES ($1, $2, $3, $4)
     ON CONFLICT (collection, id) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`,
   [collection, id, JSON.stringify(value), new Date().toISOString()]);
 }
 
-export async function saveCmsRecord(collection: Collection, input: unknown) {
+export async function saveCmsRecord(collection: Collection, input: unknown, file?: File) {
   const idResult = z.object({ id: z.string().regex(/^[a-z0-9-]{1,80}$/).optional() }).safeParse(input);
-  const result = recordSchemas[collection].safeParse(input);
+  const upload = file ? await readMedia('photo', file.name, file) : undefined;
+  const result = recordSchemas[collection].safeParse(upload ? attachUploadedValue(input, 'photo', upload.asset.url) : input);
   if (!result.success || !idResult.success) throw new CmsError('Check the required fields and URLs.');
   const id = idResult.data.id ?? randomUUID();
-  await upsert(collection, id, result.data);
+  await upsert(collection, id, result.data, upload);
   return { id };
 }
 
@@ -112,7 +113,7 @@ const mimeTypes: Record<string, string> = {
   pdf: 'application/pdf', mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav',
 };
 
-async function readMedia(kind: LibraryAsset['type'], label: string, file: File) {
+export async function readMedia(kind: LibraryAsset['type'], label: string, file: File) {
   if (!file.size || file.size > maxMediaBytes || file.name.length > 200) throw new CmsError(`Choose a file up to ${maxMediaMb} MB with a name under 200 characters.`);
   const extension = file.name.split('.').at(-1)?.toLowerCase() ?? '';
   const mime = mimeTypes[extension];
@@ -129,7 +130,27 @@ async function readMedia(kind: LibraryAsset['type'], label: string, file: File) 
   };
   if (!signatures[mime]) throw new CmsError('The file contents do not match its extension.');
   const id = randomUUID();
-  return { asset: { id, label, url: `/api/iff/media/${id}`, filename: file.name, type: kind }, mime, content };
+  return { asset: { id, label: label.slice(0, 180), url: `/api/iff/media/${id}`, filename: file.name, type: kind }, mime, content };
+}
+
+type MediaUpload = Awaited<ReturnType<typeof readMedia>>;
+
+export function attachUploadedValue(input: unknown, field: 'photo' | 'url', value: string) {
+  return input && typeof input === 'object' && !Array.isArray(input) ? { ...input, [field]: value } : input;
+}
+
+export async function queryWithMedia(upload: MediaUpload | undefined, sql: string, values: unknown[]) {
+  if (!upload) return query(sql, values);
+  const { asset, mime, content } = upload;
+  const media = [asset.id, asset.type, asset.label, asset.filename, mime, content, new Date().toISOString()];
+  const bindings = ['uuid', 'text', 'text', 'text', 'text', 'bytea', 'text']
+    .map((type, index) => `$${values.length + index + 1}::${type}`).join(', ');
+  // PostgreSQL executes the writable CTE and the record write together, so a failed save leaves no new file behind.
+  const { rows } = await query(`WITH saved AS (${sql} RETURNING 1), uploaded AS (
+    INSERT INTO ${tables.media} (id, kind, label, filename, mime, content, created_at)
+    SELECT ${bindings} FROM saved RETURNING id
+  ) SELECT * FROM saved`, [...values, ...media]);
+  return { rows, affected: rows.length };
 }
 
 export async function saveMedia(data: FormData) {
@@ -170,14 +191,7 @@ export async function publishPagePhoto(data: FormData) {
   const update = `INSERT INTO ${tables.records} AS page (collection, id, data, updated_at) VALUES ('pages', $1, $2, $3)
     ON CONFLICT (collection, id) DO UPDATE SET data = (page.data - $4::text) || EXCLUDED.data,
       updated_at = EXCLUDED.updated_at`;
-  if (upload) {
-    await query(`WITH uploaded AS (
-      INSERT INTO ${tables.media} (id,kind,label,filename,mime,content,created_at)
-      VALUES ($5,'photo',$6,$7,$8,$9,$3) RETURNING id
-    ) ${update}`, [...values, upload.asset.id, upload.asset.label, upload.asset.filename, upload.mime, upload.content]);
-  } else {
-    await query(update, values);
-  }
+  await queryWithMedia(upload, update, values);
   return { choice, asset: upload?.asset ?? null };
 }
 

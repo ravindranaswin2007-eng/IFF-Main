@@ -25,9 +25,9 @@ The dev server prints its URL. Form submissions and publications are saved in th
 
 Set `IFF_ADMIN_PASSWORD` in the server environment before starting if you want to sign in to the CRM at `/admin`. Choose a generated password of at least 16 characters and leave the email field blank for the first sign-in. Under **Settings → Users**, create named editor or administrator accounts. Only administrators can manage users.
 
-- **Submissions inbox** receives membership and contact enquiries, career and speaker applications, and newsletter sign-ups. Search or filter submissions, set their follow-up status, record an owner and private notes, download résumés, or export the filtered inbox to CSV.
-- **Content** manages events and Knowledge Hub publications. Use the file library or a public URL for reports and recordings. Publication drafts stay private until published.
-- **People** edits leadership and volunteer profiles. Visible profiles appear on About Us.
+- **Submissions inbox** receives membership and contact enquiries, career and speaker applications, and newsletter sign-ups. Search or filter submissions, set their follow-up status, record an owner and private notes, download résumés, or export the filtered inbox to CSV. Administrator accounts can permanently delete enquiries.
+- **Content** manages events and Knowledge Hub publications. Upload an event photo, report, or recording directly in the editor, or select one from the library. Publications can also link to files hosted elsewhere. Publication drafts stay private until published.
+- **People** edits leadership and volunteer profiles. Upload a photo in the profile or choose one from the library. Visible profiles appear on About Us.
 - **Library** stores approved photographs, PDFs and audio files for the public site. Each upload can be up to 20 MB. Use the enquiries inbox for private résumés.
 - **Website → Page photographs** previews the images on each page. Paste or drop an approved photograph into a placement, choose a file, or select a library image, then select **Publish photo**. The public page picks up the change on its next load. Manage event and profile photographs in their respective collections.
 - **Website → Logo, partners & brochure** sets the site logo, partner names and partnership brochure.
